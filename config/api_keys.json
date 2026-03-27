@@ -5,5 +5,12 @@
     "temperature": 0.1,
     "max_tokens": 200
   },
+  "zhipu": {
+    "api_key": "fa2c1ff1a867440ba3c322f710905daf.lYlgKucSxiBZwLUr",
+    "model": "glm-4.5-air",
+    "base_url": "https://open.bigmodel.cn/api/paas/v4",
+    "temperature": 0.1,
+    "max_tokens": 200
+  },
   "note": "This file should be added to .gitignore for security"
 }

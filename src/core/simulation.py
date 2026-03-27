@@ -36,13 +36,61 @@ def extract_kdir_from_response(response: str) -> int:
         0 for "stand on" or default
     """
     response_lower = response.lower()
-    
-    if "turn starboard" in response_lower or "alter course to starboard" in response_lower or "starboard" in response_lower:
+
+    # Check for starboard turn indicators (more specific patterns)
+    starboard_patterns = [
+        "turn starboard",
+        "alter course to starboard",
+        "give-way, turn to starboard",
+        "give way to starboard",
+        "starboard",
+        "right"
+    ]
+
+    # Check for port turn indicators
+    port_patterns = [
+        "turn port",
+        "alter course to port",
+        "give-way, turn to port",
+        "give way to port",
+        "port",
+        "left"
+    ]
+
+    # Check for stand on indicators
+    stand_on_patterns = [
+        "stand on",
+        "stand-on",
+        "no action",
+        "maintain course",
+        "continue current",
+        "keep course"
+    ]
+
+    # Count matches for each action
+    starboard_count = sum(1 for pattern in starboard_patterns if pattern in response_lower)
+    port_count = sum(1 for pattern in port_patterns if pattern in response_lower)
+    stand_on_count = sum(1 for pattern in stand_on_patterns if pattern in response_lower)
+
+    # Debug output
+    if os.getenv("SHOW_LLM_DEBUG", "false").lower() == "true":
+        print(f"[DEBUG] Pattern matching:")
+        print(f"  Starboard matches: {starboard_count}")
+        print(f"  Port matches: {port_count}")
+        print(f"  Stand on matches: {stand_on_count}")
+
+    # Determine the action based on pattern matches
+    if starboard_count > 0:
         return 1
-    elif "turn port" in response_lower or "alter course to port" in response_lower or "port" in response_lower:
+    elif port_count > 0:
         return -1
-    else:  # "stand on" or any other action
+    elif stand_on_count > 0:
         return 0
+    else:
+        # If no clear pattern, look at context
+        if "no action" in response_lower or "continue" in response_lower:
+            return 0
+        return 0  # Default to stand on
 
 def run_colm(risk: Union[float, List[float], np.ndarray],
             distance: Union[float, List[float], np.ndarray],
@@ -90,7 +138,7 @@ def run_colm(risk: Union[float, List[float], np.ndarray],
 def load_env_file():
     """Load environment variables from .env file if it exists."""
     env_file = Path(__file__).parent.parent.parent / '.env'
-    
+
     if env_file.exists():
         with open(env_file, 'r') as f:
             for line in f:
@@ -99,6 +147,10 @@ def load_env_file():
                     if '=' in line:
                         key, value = line.split('=', 1)
                         os.environ[key] = value
+
+def should_show_debug():
+    """Check if debug output is enabled."""
+    return os.getenv("SHOW_LLM_DEBUG", "false").lower() == "true"
 
 def parse_args():
     parser = argparse.ArgumentParser(description='Marine Vehicle Simulation')
@@ -185,9 +237,22 @@ def run_simulation(args=None, return_data=False):
         plt.grid(True)
         writer = animation.PillowWriter(fps=5)
 
+        # Ensure output directory exists
+        os.makedirs(args.output_dir, exist_ok=True)
+
     # Main simulation loop
+    print(f"\n=== Starting Simulation ===")
+    print(f"Case: {args.case_number}")
+    print(f"Duration: {args.sim_time} seconds")
+    print(f"LLM enabled: {'Yes' if args.llm == 1 else 'No'}")
+    print(f"LLM provider: {args.llm_provider}")
+    print(f"Animation: {'Yes' if Animation else 'No'}")
+    print("-" * 50)
+
     if Animation:
-        with writer.saving(fig, f"{args.output_dir}/scenario_animation{args.case_number}.gif", dpi=200):
+        output_path = f"{args.output_dir}/scenario_animation{args.case_number}.gif"
+        os.makedirs(os.path.dirname(output_path), exist_ok=True)
+        with writer.saving(fig, output_path, dpi=200):
             for i in range(len(x)):
                 # Record current state
                 time.append(t)
@@ -396,12 +461,32 @@ def run_simulation(args=None, return_data=False):
                     Risk[i, j] = risk_calculations(
                         DCPA[i, j], TCPA[i, j], Distance_ob[i, j], Vrel[i, j])
 
+            # Print simulation progress every 5 seconds
+                if i % int(5/dt) == 0:
+                    avg_risk = np.mean(Risk[i, :])
+                    print(f"Time: {t:6.1f}s | Avg Risk: {avg_risk:.3f} | Kdir: {Kdir[i]:.1f}")
+
             if args.llm == 1:
                 if not LLM_AVAILABLE:
                     if i == 0:  # Print warning only once
                         print("Warning: LLM requested but langchain_openai not available. Running without LLM.")
                 else:
                     if i % 200 == 0:
+                        # Print current situation before asking LLM
+                        print(f"\n{'='*60}")
+                        print(f"[LLM Input at t={t:.1f}s]")
+                        print(f"{'='*60}")
+
+                        # Print vessel information
+                        for j in range(len(Xob)):
+                            print(f"\n🚢 Vessel {j+1}:")
+                            print(f"  📏 Distance: {Distance_ob[i, j]:.2f} nmi")
+                            print(f"  🧭 Bearing: {Bearing_ob[i, j]:.1f}°")
+                            print(f"  ⏱️  DCPA: {DCPA[i, j]:.2f} nmi")
+                            print(f"  ⏱️  TCPA: {TCPA[i, j]:.1f} s")
+                            print(f"  ⚠️  Risk: {Risk[i, j]:.3f}")
+
+                        # Get decision from LLM
                         decision = run_colm(
                             Risk[i, :],
                             Distance_ob[i, :],
@@ -410,11 +495,41 @@ def run_simulation(args=None, return_data=False):
                             TCPA[i, :],
                             provider=args.llm_provider
                         )
-                     
+
+                        print(f"\n{'='*60}")
+                        print(f"[🤖 LLM Response]")
+                        print(f"{'='*60}")
                         print(decision)
-                        
+                        print(f"{'='*60}")
+
+                        # Extract and display action
                         new_kdir = extract_kdir_from_response(decision)
                         Kdir[i] = new_kdir
+
+                        # Print decision action with explanation
+                        if new_kdir == 1:
+                            action = "Turn STARBOARD"
+                            print(f"\n🎯 FINAL DECISION: {action}")
+                            print("   → Turn right to give way to other vessel")
+                        elif new_kdir == -1:
+                            action = "Turn PORT"
+                            print(f"\n🎯 FINAL DECISION: {action}")
+                            print("   → Turn left to give way to other vessel")
+                        else:
+                            action = "STAND ON (no action)"
+                            print(f"\n🎯 FINAL DECISION: {action}")
+                            print("   → Maintain course and speed (no action needed)")
+
+                        # Show reasoning if debug mode is enabled
+                        if should_show_debug():
+                            print(f"\n[DEBUG] Full response parsing:")
+                            print(f"  Raw response length: {len(decision)} characters")
+                            print(f"  Extracted Kdir: {new_kdir}")
+                            print(f"  Keywords found: 'starboard'={1 if 'starboard' in decision.lower() else 0}, "
+                                  f"'port'={1 if 'port' in decision.lower() else 0}, "
+                                  f"'stand on'={1 if 'stand on' in decision.lower() else 0}")
+
+                        print(f"{'='*60}\n")
                     elif i > 0:
                         pass
 
@@ -457,6 +572,32 @@ def run_simulation(args=None, return_data=False):
     plt.savefig(f'{args.output_dir}/plot_dcpa_tcpa_risk_{args.case_number}.eps', format='eps')
     plt.savefig(f'{args.output_dir}/plot_dcpa_tcpa_risk_{args.case_number}.png')
     plt.show()
+
+    # Print summary statistics
+    print("\n=== Simulation Summary ===")
+    print(f"Case: {args.case_number}")
+    print(f"Duration: {args.sim_time} seconds")
+    print(f"Total simulation steps: {len(time)}")
+
+    if len(Xob) > 0:
+        min_dcpa = np.min(DCPA) / 1852
+        max_risk = np.max(Risk)
+        print(f"Minimum DCPA: {min_dcpa:.2f} nautical miles")
+        print(f"Maximum Risk: {max_risk:.3f}")
+
+        # Count maneuvers
+        starboard_turns = np.sum(Kdir == 1)
+        port_turns = np.sum(Kdir == -1)
+        stand_on = np.sum(Kdir == 0)
+        print(f"\nManeuver Statistics:")
+        print(f"  - Starboard turns: {starboard_turns}")
+        print(f"  - Port turns: {port_turns}")
+        print(f"  - Stand on: {stand_on}")
+
+    print(f"\nOutput files generated:")
+    print(f"  - Animation: img/scenario_animation{args.case_number}.gif")
+    print(f"  - Plots: img/plot_dcpa_tcpa_risk_{args.case_number}.png")
+    print("=" * 50)
 
     # Return data if requested (for comparison mode)
     if return_data:

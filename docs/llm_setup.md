@@ -18,12 +18,15 @@ nano .env
 # OpenAI Configuration
 OPENAI_API_KEY=sk-your-actual-openai-key-here
 
-# Claude Configuration  
+# Claude Configuration
 CLAUDE_API_KEY=sk-ant-your-actual-claude-key-here
+
+# Zhipu AI Configuration (智谱AI)
+ZHIPU_API_KEY=your-zhipu-api-key-here
 
 # Choose default provider
 LLM_PROVIDER=openai
-# Options: openai, claude
+# Options: openai, claude, zhipu
 ```
 
 3. **Run simulation**:
@@ -36,6 +39,7 @@ python main.py --llm 1 --case_number 1
 # Or specify provider explicitly
 python main.py --llm 1 --llm_provider claude --case_number 1
 python main.py --llm 1 --llm_provider openai --case_number 1
+python main.py --llm 1 --llm_provider zhipu --case_number 1
 ```
 
 ### **Method 2: Environment Variable**
@@ -60,8 +64,15 @@ source ~/.bashrc
 ```json
 {
   "openai": {
-    "api_key": "sk-your-actual-api-key-here",
-    "model": "gpt-4.0",
+    "api_key": "sk-your-actual-openai-key-here",
+    "model": "gpt-4",
+    "temperature": 0.1,
+    "max_tokens": 200
+  },
+  "zhipu": {
+    "api_key": "your-zhipu-api-key-here",
+    "model": "glm-4",
+    "base_url": "https://open.bigmodel.cn/api/paas/v4",
     "temperature": 0.1,
     "max_tokens": 200
   }
@@ -87,16 +98,23 @@ source ~/.bashrc
 
 ## 🚀 Quick Start
 
-1. **Get your API key** from https://platform.openai.com/api-keys
+1. **Get your API keys**:
+   - OpenAI: https://platform.openai.com/api-keys
+   - Zhipu AI (智谱): https://open.bigmodel.cn/console/usercenter/apikeys
+   - Claude: https://console.anthropic.com/
 2. **Choose your method** (we recommend .env file)
 3. **Set the key**:
 ```bash
-echo "OPENAI_API_KEY=sk-your-key-here" > .env
+# For Zhipu AI
+echo "ZHIPU_API_KEY=your-zhipu-key-here" >> .env
+
+# For OpenAI
+echo "OPENAI_API_KEY=sk-your-openai-key-here" >> .env
 ```
 4. **Test it**:
 ```bash
 source simEnv/bin/activate
-python main.py --llm 1 --case_number 1 --sim_time 60
+python main.py --llm 1 --llm_provider zhipu --case_number 1 --sim_time 60
 ```
 
 ## 🔧 Configuration Options
@@ -106,9 +124,23 @@ You can customize the LLM behavior by setting these environment variables:
 
 ```bash
 # In .env file
+# OpenAI Configuration
 OPENAI_API_KEY=sk-your-key-here
-OPENAI_MODEL=gpt-4          
+OPENAI_MODEL=gpt-4
 OPENAI_TEMPERATURE=0.1              # 0.0 to 1.0
 OPENAI_MAX_TOKENS=200               # Response length
+
+# Zhipu AI Configuration
+ZHIPU_API_KEY=your-zhipu-key-here
+ZHIPU_MODEL=glm-4                   # glm-4, glm-4v, glm-3-turbo
+ZHIPU_BASE_URL=https://open.bigmodel.cn/api/paas/v4
+ZHIPU_TEMPERATURE=0.1              # 0.0 to 1.0
+ZHIPU_MAX_TOKENS=200               # Response length
+
+# Claude Configuration
+CLAUDE_API_KEY=sk-ant-your-claude-key-here
+CLAUDE_MODEL=claude-sonnet-4-20250514
+CLAUDE_TEMPERATURE=0.1              # 0.0 to 1.0
+CLAUDE_MAX_TOKENS=50                # Response length
 ```
 
