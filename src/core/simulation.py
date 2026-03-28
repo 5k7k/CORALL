@@ -27,6 +27,48 @@ except ImportError:
     VesselState = None
 from typing import List, Union, Optional
 
+def save_figure_with_type(fig, base_path, file_type, case_number, dpi=None):
+    """Save figure with proper directory structure based on file type."""
+    # Create directory structure
+    img_dir = Path("./img")
+    file_type_dir = img_dir / file_type
+    file_type_dir.mkdir(parents=True, exist_ok=True)
+
+    # Save figure
+    if file_type == 'eps':
+        filepath = file_type_dir / f"{base_path}_{case_number}.eps"
+        fig.savefig(filepath, format='eps', bbox_inches='tight')
+    elif file_type == 'png':
+        filepath = file_type_dir / f"{base_path}_{case_number}.png"
+        fig.savefig(filepath, bbox_inches='tight', dpi=dpi)
+    elif file_type == 'gif':
+        filepath = file_type_dir / f"{base_path}_{case_number}.gif"
+        # For GIF, we need to use the animation writer
+        # This function is called outside the animation context
+        # So we'll just return the path
+    else:
+        raise ValueError(f"Unsupported file type: {file_type}")
+
+    return filepath
+
+def save_gif_with_type(output_path, file_type, case_number):
+    """Save GIF with proper directory structure."""
+    # Create directory structure
+    img_dir = Path("./img")
+    file_type_dir = img_dir / file_type
+    file_type_dir.mkdir(parents=True, exist_ok=True)
+
+    # Extract base name and create new path
+    base_name = os.path.basename(output_path)
+    new_path = file_type_dir / base_name
+
+    # If the file exists, move it
+    if os.path.exists(output_path):
+        os.makedirs(file_type_dir, exist_ok=True)
+        os.rename(output_path, new_path)
+
+    return new_path
+
 def extract_kdir_from_response(response: str) -> int:
     """
     Extract K_dir from LLM response
@@ -250,9 +292,13 @@ def run_simulation(args=None, return_data=False):
     print("-" * 50)
 
     if Animation:
-        output_path = f"{args.output_dir}/scenario_animation{args.case_number}.gif"
-        os.makedirs(os.path.dirname(output_path), exist_ok=True)
-        with writer.saving(fig, output_path, dpi=200):
+        # Save in gif directory
+        output_path = f"scenario_animation{args.case_number}.gif"
+        gif_dir = Path("./img/gif")
+        gif_dir.mkdir(parents=True, exist_ok=True)
+        full_output_path = gif_dir / output_path
+
+        with writer.saving(fig, str(full_output_path), dpi=200):
             for i in range(len(x)):
                 # Record current state
                 time.append(t)
@@ -377,8 +423,8 @@ def run_simulation(args=None, return_data=False):
 
             # Save animation plots
             plt.title(f'Case {args.case_number}', fontsize=25)
-            plt.savefig(f'{args.output_dir}/simulation_result{args.case_number}.eps', format='eps')
-            plt.savefig(f'{args.output_dir}/simulation_result{args.case_number}.png')
+            save_figure_with_type(plt.gcf(), 'simulation_result', 'eps', args.case_number)
+            save_figure_with_type(plt.gcf(), 'simulation_result', 'png', args.case_number, dpi=300)
             plt.show(block=True)
     else:
         # Run simulation without animation
@@ -569,8 +615,8 @@ def run_simulation(args=None, return_data=False):
 
     fig.suptitle(f'Case {args.case_number}', fontsize=20)
     plt.tight_layout()
-    plt.savefig(f'{args.output_dir}/plot_dcpa_tcpa_risk_{args.case_number}.eps', format='eps')
-    plt.savefig(f'{args.output_dir}/plot_dcpa_tcpa_risk_{args.case_number}.png')
+    save_figure_with_type(fig, 'plot_dcpa_tcpa_risk', 'eps', args.case_number)
+    save_figure_with_type(fig, 'plot_dcpa_tcpa_risk', 'png', args.case_number, dpi=300)
     plt.show()
 
     # Print summary statistics
@@ -595,8 +641,9 @@ def run_simulation(args=None, return_data=False):
         print(f"  - Stand on: {stand_on}")
 
     print(f"\nOutput files generated:")
-    print(f"  - Animation: img/scenario_animation{args.case_number}.gif")
-    print(f"  - Plots: img/plot_dcpa_tcpa_risk_{args.case_number}.png")
+    print(f"  - Animation: img/gif/scenario_animation{args.case_number}.gif")
+    print(f"  - Plots: img/png/plot_dcpa_tcpa_risk_{args.case_number}.png")
+    print(f"  - Plots: img/eps/plot_dcpa_tcpa_risk_{args.case_number}.eps")
     print("=" * 50)
 
     # Return data if requested (for comparison mode)
@@ -638,7 +685,7 @@ def run_simulation(args=None, return_data=False):
     plt.xlabel('Time (s)')
     plt.ylabel(r'$K_{dir}$')
     plt.grid(True)
-    plt.savefig(f'{args.output_dir}/plot_kdir_{args.case_number}.png', dpi=300)
+    save_figure_with_type(plt.gcf(), 'plot_kdir', 'png', args.case_number, dpi=300)
     plt.show()"""
 
 if __name__ == "__main__":

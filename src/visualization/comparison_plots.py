@@ -2,6 +2,32 @@ import numpy as np
 import matplotlib.pyplot as plt
 from typing import List, Dict, Any
 import os
+from pathlib import Path
+
+def save_figure_with_type(fig, base_path, file_type, case_number, provider=None, dpi=None):
+    """Save figure with proper directory structure based on file type."""
+    # Create directory structure
+    img_dir = Path("./img")
+    file_type_dir = img_dir / file_type
+    file_type_dir.mkdir(parents=True, exist_ok=True)
+
+    # Save figure
+    if file_type == 'eps':
+        if provider:
+            filepath = file_type_dir / f"{base_path}_{provider.lower()}_case_{case_number}.eps"
+        else:
+            filepath = file_type_dir / f"{base_path}_{case_number}.eps"
+        fig.savefig(filepath, format='eps', bbox_inches='tight', facecolor='white')
+    elif file_type == 'png':
+        if provider:
+            filepath = file_type_dir / f"{base_path}_{provider.lower()}_case_{case_number}.png"
+        else:
+            filepath = file_type_dir / f"{base_path}_{case_number}.png"
+        fig.savefig(filepath, bbox_inches='tight', facecolor='white', dpi=dpi)
+    else:
+        raise ValueError(f"Unsupported file type: {file_type}")
+
+    return filepath
 
 def plot_kdir_comparison(time_baseline: List[float], 
                         kdir_baseline: np.ndarray,
@@ -66,14 +92,10 @@ def plot_kdir_comparison(time_baseline: List[float],
     plt.tight_layout()
     
     # Save plot
-    filename = f'kdir_comparison_{llm_provider.lower()}_case_{case_number}.png'
-    filepath = os.path.join(output_dir, filename)
-    plt.savefig(filepath, dpi=300, bbox_inches='tight', facecolor='white')
-    
+    save_figure_with_type(plt.gcf(), 'kdir_comparison', 'png', case_number, llm_provider, dpi=300)
+
     # Also save as EPS
-    eps_filename = f'kdir_comparison_{llm_provider.lower()}_case_{case_number}.eps'
-    eps_filepath = os.path.join(output_dir, eps_filename)
-    plt.savefig(eps_filepath, format='eps', bbox_inches='tight', facecolor='white')
+    save_figure_with_type(plt.gcf(), 'kdir_comparison', 'eps', case_number, llm_provider)
     
     plt.show()
     
