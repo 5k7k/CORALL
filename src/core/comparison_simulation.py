@@ -1,14 +1,9 @@
+import os
 import numpy as np
-import matplotlib.pyplot as plt
-from matplotlib import animation
-from typing import Dict, Any, Tuple, List
-import copy
+from typing import Dict, Any
 
 from src.core.simulation import run_simulation as _run_simulation
 from src.visualization.comparison_plots import plot_kdir_comparison, create_comparison_summary
-import io
-import sys
-from contextlib import redirect_stdout
 
 def run_comparison_simulation(args) -> Dict[str, Any]:
     """
@@ -27,11 +22,11 @@ def run_comparison_simulation(args) -> Dict[str, Any]:
     # Store original args
     original_llm = args.llm
     original_animation = args.no_animation
-    
-    # Keep original animation setting
+    os.makedirs(args.output_dir, exist_ok=True)
     
     print("Step 1: Running Baseline Simulation (No LLM)...")
     args.llm = 0  # Disable LLM for baseline
+    args.no_animation = True
     baseline_results = _run_simulation(args, return_data=True)
     
     print("\n Step 2: Running LLM Simulation...")
@@ -81,6 +76,10 @@ def run_comparison_simulation(args) -> Dict[str, Any]:
 
 def calculate_comparison_stats(baseline_results: Dict, llm_results: Dict, args) -> Dict[str, Dict]:
     """Calculate statistics for comparison between baseline and LLM simulations."""
+
+    def safe_mean(values: np.ndarray) -> float:
+        valid_values = values[values > 0]
+        return float(np.mean(valid_values)) if valid_values.size > 0 else 0.0
     
     # Extract data
     kdir_baseline = baseline_results['kdir']
@@ -92,7 +91,7 @@ def calculate_comparison_stats(baseline_results: Dict, llm_results: Dict, args) 
     baseline_stats = {
         'total_turns': np.sum(np.abs(kdir_baseline) > 0.1),
         'max_risk': np.max(risk_baseline),
-        'avg_risk': np.mean(risk_baseline[risk_baseline > 0]),
+        'avg_risk': safe_mean(risk_baseline),
         'final_distance': np.sqrt(baseline_results['x'][-1]**2 + baseline_results['y'][-1]**2) / 1852,
         'sim_time': args.sim_time
     }
@@ -100,7 +99,7 @@ def calculate_comparison_stats(baseline_results: Dict, llm_results: Dict, args) 
     llm_stats = {
         'total_turns': np.sum(np.abs(kdir_llm) > 0.1),
         'max_risk': np.max(risk_llm),
-        'avg_risk': np.mean(risk_llm[risk_llm > 0]),
+        'avg_risk': safe_mean(risk_llm),
         'final_distance': np.sqrt(llm_results['x'][-1]**2 + llm_results['y'][-1]**2) / 1852,
         'sim_time': args.sim_time
     }

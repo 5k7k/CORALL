@@ -4,6 +4,7 @@ from matplotlib import animation
 import argparse
 import os
 from pathlib import Path
+from types import SimpleNamespace
 from src.navigation.planning import waypoint_selection, planning
 from src.dynamics.vessel_dynamics import vessel_dynamics
 from src.core.integration import integration
@@ -15,8 +16,7 @@ from src.dynamics.actuator_modeling import actuator_modeling
 from src.risk_assessment.risk_calculations import risk_calculations
 from src.navigation.reactive_avoidance import reactive_avoidance
 from src.visualization.animate import animate_step
-from src.utils.imazu_cases import get_obstacles, nautical_to_meters, obstacle_cases, get_obstacle_data
-import matplotlib.ticker as ticker
+from src.utils.imazu_cases import nautical_to_meters, get_obstacle_data
 # Optional LLM imports
 try:
     from src.decision_making.multi_llm_decision import COLREGSInterpreter, VesselState
@@ -203,7 +203,7 @@ def parse_args():
     parser.add_argument('--output_dir', type=str, default='img/', help='Output directory for results')
     parser.add_argument('--llm', type=int, default=0, help='Use LLM for decision making (0=off, 1=on)')
     parser.add_argument('--llm_provider', type=str, default=None, 
-                       help='LLM provider to use (openai, claude). If not specified, uses LLM_PROVIDER from .env')
+                       help='LLM provider to use (for example: openai, zhipu, claude). If not specified, uses LLM_PROVIDER from .env')
     parser.add_argument('--compare', action='store_true', 
                        help='Run comparison between LLM and baseline simulation')
     return parser.parse_args()
@@ -215,6 +215,8 @@ def run_simulation(args=None, return_data=False):
     # Parse command line arguments if not provided
     if args is None:
         args = parse_args()
+    elif not hasattr(args, 'compare'):
+        args = SimpleNamespace(**vars(args), compare=False)
     
     # Check if comparison mode is requested (only if not called from comparison)
     if args.compare and not return_data:
@@ -226,7 +228,7 @@ def run_simulation(args=None, return_data=False):
     dt = args.dt  # time step
     Ts = dt  # sampling time
     N = round(args.sim_time / dt)
-    Animation = not args.no_animation
+    Animation = not args.no_animation and not return_data
 
     # Initial conditions
     x_v, y_v, psi_v = 0.0, 0.0, np.radians(0)  # initial position and heading
@@ -581,70 +583,66 @@ def run_simulation(args=None, return_data=False):
 
             t += dt
 
-    #print(Kdir)
-    # Plot DCPA, TCPA, Risk plots
-    fig, axs = plt.subplots(2, 2)
-    for i in range(len(Xob)):
-        axs[0, 0].plot(time, DCPA[:, i] / 1852, linewidth=1.0)
-        axs[0, 1].plot(time, Distance_ob[:, i]/1852, linewidth=1.0)
-        axs[1, 0].plot(time, TCPA[:, i], linewidth=1.0, label=f'TS{i+1}')
-        axs[1, 1].plot(time, Risk[:, i], linewidth=1.0)
+    if not return_data:
+        fig, axs = plt.subplots(2, 2)
+        for i in range(len(Xob)):
+            axs[0, 0].plot(time, DCPA[:, i] / 1852, linewidth=1.0)
+            axs[0, 1].plot(time, Distance_ob[:, i]/1852, linewidth=1.0)
+            axs[1, 0].plot(time, TCPA[:, i], linewidth=1.0, label=f'TS{i+1}')
+            axs[1, 1].plot(time, Risk[:, i], linewidth=1.0)
 
-    # Configure plots
-    axs[0, 0].set_xlim([0, args.sim_time])
-    axs[0, 0].set_ylabel(r'$DCPA$ (nmi)', fontsize=20)
-    axs[0, 0].tick_params(axis='both', labelsize=15)
+        axs[0, 0].set_xlim([0, args.sim_time])
+        axs[0, 0].set_ylabel(r'$DCPA$ (nmi)', fontsize=20)
+        axs[0, 0].tick_params(axis='both', labelsize=15)
 
-    axs[0, 1].set_xlim([0, args.sim_time])
-    axs[0, 1].set_ylim([0, 2000/1852])
-    axs[0, 1].set_ylabel(r'$R$ (nmi)', fontsize=20)
-    axs[0, 1].tick_params(axis='both', labelsize=15)
-    
+        axs[0, 1].set_xlim([0, args.sim_time])
+        axs[0, 1].set_ylim([0, 2000/1852])
+        axs[0, 1].set_ylabel(r'$R$ (nmi)', fontsize=20)
+        axs[0, 1].tick_params(axis='both', labelsize=15)
 
-    axs[1, 0].set_xlim([0, args.sim_time])
-    axs[1, 0].set_xlabel('Time (s)', fontsize=20)
-    axs[1, 0].set_ylabel(r'$TCPA$ (s)', fontsize=20)
-    axs[1, 0].tick_params(axis='both', labelsize=15)
-    axs[1, 0].legend()
+        axs[1, 0].set_xlim([0, args.sim_time])
+        axs[1, 0].set_xlabel('Time (s)', fontsize=20)
+        axs[1, 0].set_ylabel(r'$TCPA$ (s)', fontsize=20)
+        axs[1, 0].tick_params(axis='both', labelsize=15)
+        axs[1, 0].legend()
 
-    axs[1, 1].set_xlim([0, args.sim_time])
-    axs[1, 1].set_ylim([0, 1])
-    axs[1, 1].set_xlabel('Time (s)', fontsize=20)
-    axs[1, 1].set_ylabel(r'$Risk$', fontsize=20)
-    axs[1, 1].tick_params(axis='both', labelsize=15)
+        axs[1, 1].set_xlim([0, args.sim_time])
+        axs[1, 1].set_ylim([0, 1])
+        axs[1, 1].set_xlabel('Time (s)', fontsize=20)
+        axs[1, 1].set_ylabel(r'$Risk$', fontsize=20)
+        axs[1, 1].tick_params(axis='both', labelsize=15)
 
-    fig.suptitle(f'Case {args.case_number}', fontsize=20)
-    plt.tight_layout()
-    save_figure_with_type(fig, 'plot_dcpa_tcpa_risk', 'eps', args.case_number)
-    save_figure_with_type(fig, 'plot_dcpa_tcpa_risk', 'png', args.case_number, dpi=300)
-    plt.show()
+        fig.suptitle(f'Case {args.case_number}', fontsize=20)
+        plt.tight_layout()
+        save_figure_with_type(fig, 'plot_dcpa_tcpa_risk', 'eps', args.case_number)
+        save_figure_with_type(fig, 'plot_dcpa_tcpa_risk', 'png', args.case_number, dpi=300)
+        plt.show()
 
-    # Print summary statistics
-    print("\n=== Simulation Summary ===")
-    print(f"Case: {args.case_number}")
-    print(f"Duration: {args.sim_time} seconds")
-    print(f"Total simulation steps: {len(time)}")
+    if not return_data:
+        print("\n=== Simulation Summary ===")
+        print(f"Case: {args.case_number}")
+        print(f"Duration: {args.sim_time} seconds")
+        print(f"Total simulation steps: {len(time)}")
 
-    if len(Xob) > 0:
-        min_dcpa = np.min(DCPA) / 1852
-        max_risk = np.max(Risk)
-        print(f"Minimum DCPA: {min_dcpa:.2f} nautical miles")
-        print(f"Maximum Risk: {max_risk:.3f}")
+        if len(Xob) > 0:
+            min_dcpa = np.min(DCPA) / 1852
+            max_risk = np.max(Risk)
+            print(f"Minimum DCPA: {min_dcpa:.2f} nautical miles")
+            print(f"Maximum Risk: {max_risk:.3f}")
 
-        # Count maneuvers
-        starboard_turns = np.sum(Kdir == 1)
-        port_turns = np.sum(Kdir == -1)
-        stand_on = np.sum(Kdir == 0)
-        print(f"\nManeuver Statistics:")
-        print(f"  - Starboard turns: {starboard_turns}")
-        print(f"  - Port turns: {port_turns}")
-        print(f"  - Stand on: {stand_on}")
+            starboard_turns = np.sum(Kdir == 1)
+            port_turns = np.sum(Kdir == -1)
+            stand_on = np.sum(Kdir == 0)
+            print(f"\nManeuver Statistics:")
+            print(f"  - Starboard turns: {starboard_turns}")
+            print(f"  - Port turns: {port_turns}")
+            print(f"  - Stand on: {stand_on}")
 
-    print(f"\nOutput files generated:")
-    print(f"  - Animation: img/gif/scenario_animation{args.case_number}.gif")
-    print(f"  - Plots: img/png/plot_dcpa_tcpa_risk_{args.case_number}.png")
-    print(f"  - Plots: img/eps/plot_dcpa_tcpa_risk_{args.case_number}.eps")
-    print("=" * 50)
+        print(f"\nOutput files generated:")
+        print(f"  - Animation: img/gif/scenario_animation{args.case_number}.gif")
+        print(f"  - Plots: img/png/plot_dcpa_tcpa_risk_{args.case_number}.png")
+        print(f"  - Plots: img/eps/plot_dcpa_tcpa_risk_{args.case_number}.eps")
+        print("=" * 50)
 
     # Return data if requested (for comparison mode)
     if return_data:

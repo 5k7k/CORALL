@@ -1,29 +1,13 @@
 import os
 from dataclasses import dataclass
-from typing import List, Optional, Tuple, Dict, Union
-from enum import Enum
-import numpy as np
+from typing import List, Optional
 from abc import ABC, abstractmethod
 
-# Import LLM clients
 try:
     from langchain_openai import ChatOpenAI
-    from langchain_core.prompts.prompt import PromptTemplate
-    OPENAI_AVAILABLE = True
+    CHAT_OPENAI_AVAILABLE = True
 except ImportError:
-    OPENAI_AVAILABLE = False
-
-try:
-    import anthropic
-    ANTHROPIC_AVAILABLE = True
-except ImportError:
-    ANTHROPIC_AVAILABLE = False
-
-try:
-    from langchain_openai import ChatOpenAI as ZhipuChatOpenAI
-    ZHIPU_AVAILABLE = True
-except ImportError:
-    ZHIPU_AVAILABLE = False
+    CHAT_OPENAI_AVAILABLE = False
 
 @dataclass
 class VesselState:
@@ -34,257 +18,150 @@ class VesselState:
     dcpa: float
     tcpa: float
 
-
-class RiskLevel(Enum):
-    """Risk level classification"""
-    LOW = "low"
-    MODERATE = "moderate"
-    HIGH = "high"
-    CRITICAL = "critical"
-
 class LLMProvider(ABC):
     """Abstract base class for LLM providers"""
-    
+
     @abstractmethod
     def generate_response(self, prompt: str) -> str:
         """Generate response from the LLM"""
         pass
-    
+
     @abstractmethod
     def is_available(self) -> bool:
         """Check if the LLM provider is available"""
         pass
 
-class OpenAIProvider(LLMProvider):
-    """OpenAI LLM provider implementation"""
-    
-    def __init__(self, model: str = "gpt-4", temperature: float = 0.1, max_tokens: int = 1000):
+
+class ChatOpenAIProvider(LLMProvider):
+    """Base provider for OpenAI-compatible endpoints."""
+
+    def __init__(
+        self,
+        provider_name: str,
+        api_key: Optional[str],
+        model: str,
+        temperature: float,
+        max_tokens: int,
+        base_url: Optional[str] = None,
+    ):
+        self.provider_name = provider_name.lower()
+        self.api_key = api_key
         self.model = model
         self.temperature = temperature
         self.max_tokens = max_tokens
+        self.base_url = base_url
         self.client = None
 
-        if OPENAI_AVAILABLE and self.is_available():
-            self.client = ChatOpenAI(
-                model=model,
-                temperature=temperature,
-                max_tokens=max_tokens
-            )
-    
+        if self.is_available():
+            client_kwargs = {
+                "model": model,
+                "temperature": temperature,
+                "max_tokens": max_tokens,
+                "api_key": api_key,
+            }
+            if base_url:
+                client_kwargs["base_url"] = base_url
+            self.client = ChatOpenAI(**client_kwargs)
+
     def is_available(self) -> bool:
-        """Check if OpenAI is available"""
-        return OPENAI_AVAILABLE and os.getenv("OPENAI_API_KEY") is not None
-    
+        """Check if ChatOpenAI and the provider API key are available."""
+        return CHAT_OPENAI_AVAILABLE and bool(self.api_key)
+
     def generate_response(self, prompt: str) -> str:
-        """Generate response using OpenAI"""
+        """Generate response through an OpenAI-compatible client."""
         if not self.client:
-            return "OpenAI not available"
-        
+            return f"{self.provider_name} not available"
+
         try:
             response = self.client.invoke(prompt)
             return response.content
         except Exception as e:
-            return f"OpenAI error: {str(e)}"
+            return f"{self.provider_name} error: {str(e)}"
 
-class ClaudeProvider(LLMProvider):
-    """Claude/Anthropic LLM provider implementation"""
 
-    def __init__(self, model: str = "claude-sonnet-4-20250514", temperature: float = 0.1, max_tokens: int = 1000):
-        self.model = model
-        self.temperature = temperature
-        self.max_tokens = max_tokens
-        self.client = None
+class OpenAIProvider(LLMProvider):
+    """OpenAI provider using OPENAI_* environment variables."""
 
-        if ANTHROPIC_AVAILABLE and self.is_available():
-            self.client = anthropic.Anthropic(
-                api_key=os.getenv("CLAUDE_API_KEY")
-            )
-
-    def is_available(self) -> bool:
-        """Check if Claude is available"""
-        return ANTHROPIC_AVAILABLE and os.getenv("CLAUDE_API_KEY") is not None
-
-    def generate_response(self, prompt: str) -> str:
-        """Generate response using Claude"""
-        if not self.client:
-            return "Claude not available"
-
-        try:
-            response = self.client.messages.create(
-                model=self.model,
-                temperature=self.temperature,
-                max_tokens=self.max_tokens,
-                messages=[
-                    {"role": "user", "content": prompt}
-                ]
-            )
-            return response.content[0].text
-        except Exception as e:
-            return f"Claude error: {str(e)}"
-
-class ZhipuProvider(LLMProvider):
-    """智谱AI GLM provider implementation (OpenAI-compatible protocol)"""
-
-    def __init__(self, model: str = None, temperature: float = 0.1, max_tokens: int = 1000):
-        # 从环境变量读取模型，如果没有设置则使用默认值
-        self.model = model or os.getenv("ZHIPU_MODEL", "glm-4")
-        self.temperature = temperature
-        self.max_tokens = max_tokens
-        self.client = None
-
-        if ZHIPU_AVAILABLE and self.is_available():
-            base_url = os.getenv("ZHIPU_BASE_URL", "https://open.bigmodel.cn/api/paas/v4")
-            print(f"[DEBUG] Initializing Zhipu client with model: {self.model}")
-            print(f"[DEBUG] Using ZHIPU_MODEL from env: {os.getenv('ZHIPU_MODEL')}")
-            self.client = ZhipuChatOpenAI(
-                model=self.model,
-                temperature=temperature,
-                max_tokens=max_tokens,
-                base_url=base_url,
-                api_key=os.getenv("ZHIPU_API_KEY")
-            )
+    def __init__(self):
+        self.provider = ChatOpenAIProvider(
+            provider_name="openai",
+            api_key=os.getenv("OPENAI_API_KEY"),
+            model=os.getenv("OPENAI_MODEL", "gpt-4"),
+            temperature=float(os.getenv("OPENAI_TEMPERATURE", "0.1")),
+            max_tokens=int(os.getenv("OPENAI_MAX_TOKENS", "1000")),
+            base_url=os.getenv("OPENAI_BASE_URL"),
+        )
 
     def is_available(self) -> bool:
-        """Check if Zhipu is available"""
-        return ZHIPU_AVAILABLE and os.getenv("ZHIPU_API_KEY") is not None
+        return self.provider.is_available()
 
     def generate_response(self, prompt: str) -> str:
-        """Generate response using Zhipu"""
-        if not self.client:
-            print(f"[DEBUG] Zhipu client not available")
-            return "Zhipu not available"
+        return self.provider.generate_response(prompt)
 
-        try:
-            print(f"[DEBUG] Zhipu provider using model: {self.model}")
-            print(f"[DEBUG] API key available: {bool(os.getenv('ZHIPU_API_KEY'))}")
-            print(f"[DEBUG] Base URL: {os.getenv('ZHIPU_BASE_URL', 'default')}")
 
-            # Make the API call
-            response = self.client.invoke(prompt)
+class OtherProvider(LLMProvider):
+    """Generic provider for any OpenAI-compatible endpoint except OpenAI itself."""
 
-            if response and hasattr(response, 'content'):
-                content = response.content
-                print(f"[DEBUG] Response type: {type(content)}")
-                print(f"[DEBUG] Response content: {repr(content)}")
-                return content
-            else:
-                print(f"[DEBUG] Unexpected response format: {response}")
-                return f"Zhipu error: Unexpected response format - {str(response)}"
+    def __init__(self, provider_name: str):
+        prefix = provider_name.upper()
+        self.provider_name = provider_name.lower()
+        self.provider = ChatOpenAIProvider(
+            provider_name=self.provider_name,
+            api_key=os.getenv(f"{prefix}_API_KEY"),
+            model=os.getenv(f"{prefix}_MODEL", ""),
+            temperature=float(os.getenv(f"{prefix}_TEMPERATURE", "0.1")),
+            max_tokens=int(os.getenv(f"{prefix}_MAX_TOKENS", "1000")),
+            base_url=os.getenv(f"{prefix}_BASE_URL"),
+        )
 
-        except Exception as e:
-            print(f"[DEBUG] Zhipu API error: {str(e)}")
-            print(f"[DEBUG] Error type: {type(e)}")
-            import traceback
-            print(f"[DEBUG] Full traceback: {traceback.format_exc()}")
-            return f"Zhipu error: {str(e)}"
+    def is_available(self) -> bool:
+        return self.provider.is_available() and bool(self.provider.model)
+
+    def generate_response(self, prompt: str) -> str:
+        if not self.provider.model:
+            return f"{self.provider_name} not configured: missing model"
+        return self.provider.generate_response(prompt)
 
 class MultiLLMCOLREGSInterpreter:
     """COLREGs interpreter that can use multiple LLM providers"""
-    
+
     def __init__(self, provider: str = None):
-        self.provider_name = provider or os.getenv("LLM_PROVIDER", "openai")
+        self.provider_name = (provider or os.getenv("LLM_PROVIDER", "openai")).lower()
         self.provider = self._initialize_provider()
-        
-        self.system_prompt = """You are a ship navigation officer. Based on the situation, give a simple decision in this format:
+        self.system_prompt = self._load_system_prompt()
+
+    def _get_prompt_file_path(self) -> str:
+        """Return the absolute path to the unified prompt file."""
+        project_root = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+        return os.path.join(project_root, "prompt", "prompt.txt")
+
+    def _load_system_prompt(self) -> str:
+        """Load system prompt from the unified offline prompt file."""
+        default_prompt = """You are a ship navigation officer. Based on the situation, give a simple decision in this format:
 Action: [Stand on / Give-way, turn to starboard / Give-way, turn to port]
 
 Situation:"""
+
+        try:
+            prompt_path = self._get_prompt_file_path()
+
+            with open(prompt_path, "r", encoding="utf-8") as f:
+                prompt = f.read().strip()
+
+            if prompt:
+                return prompt
+
+            print(f"Warning: Prompt file is empty: {prompt_path}")
+            return default_prompt
+
+        except Exception as e:
+            print(f"Warning: Could not load system prompt from prompt/prompt.txt: {str(e)}")
+            return default_prompt
     
     def _initialize_provider(self) -> Optional[LLMProvider]:
-        """Initialize the appropriate LLM provider"""
-        if self.provider_name.lower() == "openai":
-            provider = OpenAIProvider(
-                model=os.getenv("OPENAI_MODEL", "gpt-4"),
-                temperature=float(os.getenv("OPENAI_TEMPERATURE", "0.1")),
-                max_tokens=int(os.getenv("OPENAI_MAX_TOKENS", "1000"))
-            )
-            if provider.is_available():
-                return provider
-
-        elif self.provider_name.lower() == "claude":
-            provider = ClaudeProvider(
-                model=os.getenv("CLAUDE_MODEL", "claude-sonnet-4-20250514"),
-                temperature=float(os.getenv("CLAUDE_TEMPERATURE", "0.1")),
-                max_tokens=int(os.getenv("CLAUDE_MAX_TOKENS", "1000"))
-            )
-            if provider.is_available():
-                return provider
-
-        elif self.provider_name.lower() == "zhipu":
-            provider = ZhipuProvider(
-                model=os.getenv("ZHIPU_MODEL", "glm-4"),
-                temperature=float(os.getenv("ZHIPU_TEMPERATURE", "0.1")),
-                max_tokens=int(os.getenv("ZHIPU_MAX_TOKENS", "1000"))
-            )
-            if provider.is_available():
-                return provider
-
-        # Fallback logic
-        if self.provider_name.lower() == "openai":
-            fallbacks = [
-                ClaudeProvider(
-                    model=os.getenv("CLAUDE_MODEL", "claude-sonnet-4-20250514"),
-                    temperature=float(os.getenv("CLAUDE_TEMPERATURE", "0.1")),
-                    max_tokens=int(os.getenv("CLAUDE_MAX_TOKENS", "1000"))
-                ),
-                ZhipuProvider(
-                    model=os.getenv("ZHIPU_MODEL", "glm-4"),
-                    temperature=float(os.getenv("ZHIPU_TEMPERATURE", "0.1")),
-                    max_tokens=int(os.getenv("ZHIPU_MAX_TOKENS", "1000"))
-                )
-            ]
-        elif self.provider_name.lower() == "claude":
-            fallbacks = [
-                OpenAIProvider(
-                    model=os.getenv("OPENAI_MODEL", "gpt-4"),
-                    temperature=float(os.getenv("OPENAI_TEMPERATURE", "0.1")),
-                    max_tokens=int(os.getenv("OPENAI_MAX_TOKENS", "1000"))
-                ),
-                ZhipuProvider(
-                    model=os.getenv("ZHIPU_MODEL", "glm-4"),
-                    temperature=float(os.getenv("ZHIPU_TEMPERATURE", "0.1")),
-                    max_tokens=int(os.getenv("ZHIPU_MAX_TOKENS", "1000"))
-                )
-            ]
-        elif self.provider_name.lower() == "zhipu":
-            fallbacks = [
-                OpenAIProvider(
-                    model=os.getenv("OPENAI_MODEL", "gpt-4"),
-                    temperature=float(os.getenv("OPENAI_TEMPERATURE", "0.1")),
-                    max_tokens=int(os.getenv("OPENAI_MAX_TOKENS", "1000"))
-                ),
-                ClaudeProvider(
-                    model=os.getenv("CLAUDE_MODEL", "claude-sonnet-4-20250514"),
-                    temperature=float(os.getenv("CLAUDE_TEMPERATURE", "0.1")),
-                    max_tokens=int(os.getenv("CLAUDE_MAX_TOKENS", "1000"))
-                )
-            ]
-        else:
-            fallbacks = [
-                OpenAIProvider(
-                    model=os.getenv("OPENAI_MODEL", "gpt-4"),
-                    temperature=float(os.getenv("OPENAI_TEMPERATURE", "0.1")),
-                    max_tokens=int(os.getenv("OPENAI_MAX_TOKENS", "1000"))
-                ),
-                ClaudeProvider(
-                    model=os.getenv("CLAUDE_MODEL", "claude-sonnet-4-20250514"),
-                    temperature=float(os.getenv("CLAUDE_TEMPERATURE", "0.1")),
-                    max_tokens=int(os.getenv("CLAUDE_MAX_TOKENS", "1000"))
-                ),
-                ZhipuProvider(
-                    model=os.getenv("ZHIPU_MODEL", "glm-4"),
-                    temperature=float(os.getenv("ZHIPU_TEMPERATURE", "0.1")),
-                    max_tokens=int(os.getenv("ZHIPU_MAX_TOKENS", "1000"))
-                )
-            ]
-
-        for fallback in fallbacks:
-            if fallback.is_available():
-                fallback_name = fallback.__class__.__name__.replace("Provider", "")
-                print(f"{fallback_name} unavailable, falling back to {fallback_name}")
-                return fallback
-
-        return None
+        """Initialize the requested provider without extra fallback chains."""
+        provider = OpenAIProvider() if self.provider_name == "openai" else OtherProvider(self.provider_name)
+        return provider if provider.is_available() else None
     
     
     
@@ -364,11 +241,13 @@ Based on COLREGs rules, what action should be taken?"""
         if OpenAIProvider().is_available():
             providers.append("openai")
 
-        if ClaudeProvider().is_available():
-            providers.append("claude")
-
-        if ZhipuProvider().is_available():
-            providers.append("zhipu")
+        for env_name in sorted(os.environ):
+            if not env_name.endswith("_API_KEY") or env_name == "OPENAI_API_KEY":
+                continue
+            provider_name = env_name[:-8].lower()
+            provider = OtherProvider(provider_name)
+            if provider.is_available():
+                providers.append(provider_name)
 
         return providers
 

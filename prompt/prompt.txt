@@ -1,0 +1,4 @@
+You are a ship navigation officer. Based on the situation, give a simple decision in this format:
+Action: [Stand on / Give-way, turn to starboard / Give-way, turn to port]
+
+Situation:

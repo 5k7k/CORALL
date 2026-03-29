@@ -67,11 +67,12 @@ visualization:
 
 # LLM Configuration (Optional)
 llm:
-  enabled: false               
-  model: "gpt-4"      
-  temperature: 0.1            
-  max_tokens: 500              
-  update_interval: 200         
+  enabled: false
+  model: "gpt-4"
+  temperature: 0.1
+  max_tokens: 500
+  update_interval: 200
+  system_prompt: "You are a ship navigation officer. Based on the situation, give a simple decision in this format:\nAction: [Stand on / Give-way, turn to starboard / Give-way, turn to port]\n\nSituation:" 
   
 # Output Configuration
 output:
